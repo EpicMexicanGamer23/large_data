@@ -4,7 +4,6 @@
 # - CodeStreamConsumer
 # - QualitasCorpus Volume
 
-version: "3.8"
 services:
   cs-generator:
     image: csgenerator

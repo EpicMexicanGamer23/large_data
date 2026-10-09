@@ -91,9 +91,23 @@ class CloneDetector {
         //
         // Return: file, including file.instances which is an array of Clone objects (or an empty array).
         //
-
         file.instances = file.instances || [];        
-        file.instances = file.instances.concat(newInstances);
+
+
+        //Call on chunkmatch and check content of file and compareFile
+
+        //for each chunk, compare file chunk with compareFile chunk
+        for (let chunk_index = 0; chunk_index < file.chunks.length; chunk_index++)
+        {
+            // console.log("chunk_index: ", chunk_index, "file.chunks[chunk_index]: ", file.chunks[chunk_index]);
+        
+            //1. compares file.chunks[chunk_index] with compareFile chunks, 2. filters out chunks which match, 3. maps them together into a list of Clone objects
+            let newInstances = compareFile.chunks.filter( (compare_chunk) => this.#chunkMatch(file.chunks[chunk_index], compare_chunk) )
+                .map( (compare_chunk) => new Clone(file.name, compareFile.name, file.chunks[chunk_index], compare_chunk) );
+
+            file.instances = file.instances.concat(newInstances); //safer option than push.apply, as it creates a new array instead of modifying the existing one
+        }
+
         return file;
     }
      
@@ -112,6 +126,16 @@ class CloneDetector {
         //         and not any of the Clones used during that expansion.
         //
 
+        //reduces the array of clones into a new array, where each clone is expanded with any other clone that is next to it
+       file.instances = file.instances.reduce( (accumulator, currentClone) => {
+            let found = accumulator.find( (existingClone) => existingClone.maybeExpandWith(currentClone) );
+            if (!found) {
+                //If no existing clone was found that could be expanded with the current clone, add the current clone to the accumulator
+                accumulator.push(currentClone);
+            }
+            return accumulator;
+        }, []);
+
         return file;
     }
     
@@ -128,6 +152,19 @@ class CloneDetector {
         //
         // Return: file, with file.instances containing unique Clone objects that may contain several targets
         //
+
+        //reduces the array of clones into a new array (accumulator), where each clone is consolidated with any other clone that is equal to it
+        file.instances = file.instances.reduce( (accumulator, currentClone) => {
+            let found = accumulator.find( (existingClone) => existingClone.equals(currentClone) );
+            if (found) {
+                //If an existing clone was found that is equal to the current clone, add the current clone's targets to the existing clone
+                found.addTarget(currentClone);
+            } else {
+                //Otherwise, add the current clone to the accumulator
+                accumulator.push(currentClone);
+            }
+            return accumulator;
+        }, []);
 
         return file;
     }
