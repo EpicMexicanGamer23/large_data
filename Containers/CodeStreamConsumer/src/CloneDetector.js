@@ -99,13 +99,11 @@ class CloneDetector {
         //for each chunk, compare file chunk with compareFile chunk
         for (let chunk_index = 0; chunk_index < file.chunks.length; chunk_index++)
         {
-            // console.log("chunk_index: ", chunk_index, "file.chunks[chunk_index]: ", file.chunks[chunk_index]);
-        
             //1. compares file.chunks[chunk_index] with compareFile chunks, 2. filters out chunks which match, 3. maps them together into a list of Clone objects
             let newInstances = compareFile.chunks.filter( (compare_chunk) => this.#chunkMatch(file.chunks[chunk_index], compare_chunk) )
                 .map( (compare_chunk) => new Clone(file.name, compareFile.name, file.chunks[chunk_index], compare_chunk) );
 
-            file.instances = file.instances.concat(newInstances); //safer option than push.apply, as it creates a new array instead of modifying the existing one
+            file.instances = file.instances.concat(newInstances); 
         }
 
         return file;

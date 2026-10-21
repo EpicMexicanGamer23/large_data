@@ -343,7 +343,7 @@ function processFile(filename, contents) {
         .then( (file) => cloneStore.storeClones(file) )
         .then( (file) => Timer.endTimer(file, 'match') )
 
-        .then( PASS( (file) => allTimers.push({ name: file.name, lines: file.lines?.length, timers: Timer.getTimers(file) })) )
+        .then( PASS( (file) => allTimers.push({ name: file.name, lines: file.lines?.length, timers: Timer.getTimers(file) })) ) //this line was moved up before storeFile, as I want to store files line count before its pruned
         .then( (file) => cd.storeFile(file) )
         .then( (file) => Timer.endTimer(file, 'total') )
         .then( PASS( (file) => lastFile = file ))
