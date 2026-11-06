@@ -9,8 +9,13 @@
 (def source-type #".*\.java")
 
 (defn ts-println [& args]
-  (println (.toString (java.time.LocalDateTime/now)) args))
-
+  ;; [MONITORING] Now also persists the timestamp and message to the database
+  ;; via storage/addUpdate! so status updates can be monitored from a separate process.
+  (let [ts (.toString (java.time.LocalDateTime/now))
+        msg (clojure.string/join " " (map str args))]
+    (println ts (str "[" msg "]"))
+    (storage/addUpdate! ts msg)))
+ 
 (defn maybe-clear-db [args]
   (when (some #{"CLEAR"} (map string/upper-case args))
       (ts-println "Clearing database...")

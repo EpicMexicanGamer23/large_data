@@ -53,7 +53,12 @@
          clone candidate]
     (if (empty? overlapping)
       (do
-;;        (println "Number of Clones" (storage/count-items "clones") "Remaining candidates" (storage/count-items "candidates"))
+        ;; [MONITORING] Log expansion progress: clones created so far and remaining candidates
+        (storage/addUpdate! (.toString (java.time.LocalDateTime/now))
+                            (str "expand: stored clone #"
+                                 (storage/count-items "clones")
+                                 ", remaining candidates: "
+                                 (storage/count-items "candidates")))
         (storage/remove-overlapping-candidates! dbconnection (list candidate))
         clone)
       (let [merged-clone (reduce merge-clones clone overlapping)]

@@ -16,6 +16,18 @@ services:
       SOURCEDIReclipse: "/QualitasCorpus/QualitasCorpus-20130901r/Systems/eclipse_SDK"
       SOURCEDIR: "/QualitasCorpus"
       CHUNKSIZE: 20
+  
+  monitorTool:
+    image: monitor-tool
+    depends_on:
+      - dbstorage
+    ports:
+      - 8081:3000
+    volumes:
+      - ./Containers/MonitorTool:/usr/src/app
+      - /usr/src/app/node_modules
+    environment:
+      DBHOST: dbstorage
 
   dbstorage:
     image: mongo
@@ -28,6 +40,7 @@ services:
     volumes:
       - dbstorage:/data/db
       - dbconfig:/data/configdb
+    
     
 volumes:
   dbstorage:
