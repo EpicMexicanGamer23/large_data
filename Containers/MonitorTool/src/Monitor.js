@@ -9,17 +9,25 @@
  *
  * Calculates per-interval deltas and derived statistics:
  *   - Processing rate (units/sec) for each collection
- *   - Time per unit (ms per new item) for each collection
+ *   - Time per unit (µs per new item) for each collection
  *   - Cumulative elapsed time
  *
- * Stores all samples in-memory and provides methods for the web UI to query.
+ * Stores all samples in a MongoDB collection (monitorSamples) to avoid
+ * OOM crashes during long-running monitoring sessions.
+ *
+ * On connect, archives any existing monitorSamples + statusUpdates to
+ * /data/previous-session.json, then drops monitorSamples so the new
+ * session starts clean (no data mixing between runs).
  */
 
 const { MongoClient } = require('mongodb');
+const fs = require('fs');
 
 const DB_NAME = 'cloneDetector';
 const COLLECTIONS = ['files', 'chunks', 'candidates', 'clones'];
 const STATUS_COLLECTION = 'statusUpdates';
+const SAMPLES_COLLECTION = 'monitorSamples';
+const ARCHIVE_PATH = process.env.ARCHIVE_PATH || '/data/previous-session.json';
 
 class Monitor {
     constructor(dbHost, pollIntervalMs) {
@@ -28,18 +36,14 @@ class Monitor {
         this.client = null;
         this.db = null;
 
-        // All collected samples — each sample is a snapshot at a point in time
-        this.samples = [];
-
-        // All status updates collected so far (deduplicated by _id)
-        this.statusUpdates = [];
-        this.seenStatusIds = new Set();
-
         // Track the start time of monitoring
         this.startTime = null;
 
         // Track last seen counts for delta calculation
         this.lastCounts = { files: 0, chunks: 0, candidates: 0, clones: 0 };
+
+        // Track last seen status update _id for fetching only new ones
+        this.lastStatusId = null;
 
         this.timer = null;
         this.running = false;
@@ -50,7 +54,64 @@ class Monitor {
         this.client = new MongoClient(url, { serverSelectionTimeoutMS: 5000 });
         await this.client.connect();
         this.db = this.client.db(DB_NAME);
+
+        // Archive existing session data before starting a new one
+        await this._archivePreviousSession();
+
+        // Ensure indexes for efficient querying
+        await this.db.collection(SAMPLES_COLLECTION).createIndex({ elapsedMs: 1 });
+        await this.db.collection(STATUS_COLLECTION).createIndex({ _id: 1 });
         console.log(`[Monitor] Connected to MongoDB at ${url}/${DB_NAME}`);
+    }
+
+    /**
+     * Archive existing monitorSamples + statusUpdates to /data/previous-session.json,
+     * then drop monitorSamples so the new session starts clean.
+     * Skips if there's nothing to archive (first run).
+     */
+    async _archivePreviousSession() {
+        try {
+            const sampleCount = await this.db.collection(SAMPLES_COLLECTION).countDocuments();
+            const statusCount = await this.db.collection(STATUS_COLLECTION).countDocuments();
+
+            if (sampleCount === 0 && statusCount === 0) {
+                console.log('[Monitor] No existing session data to archive.');
+                return;
+            }
+
+            console.log(`[Monitor] Archiving previous session: ${sampleCount} samples, ${statusCount} status updates → ${ARCHIVE_PATH}`);
+
+            const samples = await this.db.collection(SAMPLES_COLLECTION)
+                .find({})
+                .sort({ elapsedMs: 1 })
+                .toArray();
+            const statusUpdates = await this.db.collection(STATUS_COLLECTION)
+                .find({})
+                .sort({ _id: 1 })
+                .toArray();
+
+            const archive = {
+                archivedAt: new Date().toISOString(),
+                samples,
+                statusUpdates,
+            };
+
+            // Ensure /data directory exists
+            const dir = require('path').dirname(ARCHIVE_PATH);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+
+            fs.writeFileSync(ARCHIVE_PATH, JSON.stringify(archive, null, 2));
+            console.log(`[Monitor] Archive written to ${ARCHIVE_PATH}`);
+
+            // Drop monitorSamples so new session data doesn't mix with old
+            await this.db.collection(SAMPLES_COLLECTION).drop().catch(() => {});
+            console.log('[Monitor] Dropped monitorSamples collection for clean session.');
+        } catch (e) {
+            console.error('[Monitor] Error archiving previous session:', e.message);
+            // Non-fatal — continue starting up even if archiving fails
+        }
     }
 
     async start() {
@@ -89,24 +150,25 @@ class Monitor {
             deltas[coll] = counts[coll] - this.lastCounts[coll];
         }
 
-        // Calculate processing rate (units/sec) and time per unit (ms/unit) for this interval
+        // Calculate processing rate (units/sec) and time per unit (µs/unit) for this interval
         const intervalSeconds = this.pollIntervalMs / 1000;
         const rates = {};
         const timePerUnit = {};
         for (const coll of COLLECTIONS) {
             if (deltas[coll] > 0) {
                 rates[coll] = deltas[coll] / intervalSeconds;
-                timePerUnit[coll] = this.pollIntervalMs / deltas[coll];
+                // Convert ms/unit to µs/unit for finer granularity
+                timePerUnit[coll] = (this.pollIntervalMs / deltas[coll]) * 1000;
             } else {
                 rates[coll] = 0;
                 timePerUnit[coll] = 0;
             }
         }
 
-        // Fetch new status updates
-        const newUpdates = await this._fetchNewStatusUpdates();
+        // Fetch new status update count
+        const newStatusCount = await this._fetchNewStatusCount();
 
-        // Build the sample object
+        // Build the sample document
         const sample = {
             timestamp: new Date(now).toISOString(),
             elapsedMs: elapsedMs,
@@ -114,70 +176,78 @@ class Monitor {
             deltas: { ...deltas },
             rates: { ...rates },
             timePerUnit: { ...timePerUnit },
-            newStatusCount: newUpdates.length,
+            newStatusCount: newStatusCount,
         };
-        this.samples.push(sample);
+
+        // Persist sample to MongoDB instead of in-memory array
+        try {
+            await this.db.collection(SAMPLES_COLLECTION).insertOne(sample);
+        } catch (e) {
+            console.error('[Monitor] Error persisting sample:', e.message);
+        }
+
         this.lastCounts = { ...counts };
 
         // Log to console for text-only monitoring
         const countStr = COLLECTIONS.map(c => `${c}=${counts[c]}`).join(' ');
         const deltaStr = COLLECTIONS.map(c => `d${c}=${deltas[c] >= 0 ? '+' : ''}${deltas[c]}`).join(' ');
         console.log(`[Monitor] t=${(elapsedMs / 1000).toFixed(1)}s | ${countStr} | ${deltaStr}` +
-            (newUpdates.length > 0 ? ` | ${newUpdates.length} new status updates` : ''));
+            (newStatusCount > 0 ? ` | ${newStatusCount} new status updates` : ''));
 
         return sample;
     }
 
-    async _fetchNewStatusUpdates() {
+    async _fetchNewStatusCount() {
         try {
-            // Fetch status updates sorted by _id (ObjectId embeds timestamp, so roughly chronological)
-            const cursor = this.db.collection(STATUS_COLLECTION)
+            // Count status updates newer than the last one we saw
+            const query = this.lastStatusId ? { _id: { $gt: this.lastStatusId } } : {};
+            const count = await this.db.collection(STATUS_COLLECTION).countDocuments(query);
+
+            // Update lastStatusId to the most recent one
+            const latest = await this.db.collection(STATUS_COLLECTION)
                 .find({})
-                .sort({ _id: 1 })
-                .limit(1000);
-
-            const allUpdates = await cursor.toArray();
-            const newOnes = [];
-
-            for (const update of allUpdates) {
-                const idStr = update._id.toString();
-                if (!this.seenStatusIds.has(idStr)) {
-                    this.seenStatusIds.add(idStr);
-                    // Store the new status update
-                    newOnes.push({
-                        _id: idStr,
-                        timestamp: update.timestamp,
-                        message: update.message,
-                    });
-                    // Also add to the main statusUpdates array for UI access
-                    this.statusUpdates.push({
-                        _id: idStr,
-                        timestamp: update.timestamp,
-                        message: update.message,
-                    });
-                }
+                .sort({ _id: -1 })
+                .limit(1)
+                .toArray();
+            if (latest.length > 0) {
+                this.lastStatusId = latest[0]._id;
             }
-            return newOnes;
+            return count;
         } catch (e) {
-            console.error('[Monitor] Error fetching status updates:', e.message);
-            return [];
+            console.error('[Monitor] Error fetching status update count:', e.message);
+            return 0;
         }
     }
 
-    // --- Methods for the web UI ---
+    // --- Methods for the web UI (all async, fetch from DB) ---
 
-    getSummary() {
-        const sampleCount = this.samples.length;
-        const lastSample = this.samples[sampleCount - 1] || null;
+    async getSummary() {
+        const sampleCount = await this.db.collection(SAMPLES_COLLECTION).countDocuments();
+
+        // Get the most recent sample
+        const lastSamples = await this.db.collection(SAMPLES_COLLECTION)
+            .find({})
+            .sort({ elapsedMs: -1 })
+            .limit(1)
+            .toArray();
+        const lastSample = lastSamples[0] || null;
         const elapsedSec = lastSample ? (lastSample.elapsedMs / 1000) : 0;
 
-        // Calculate average rates (only from samples that have non-zero deltas)
+        // Get total status update count
+        const statusUpdateCount = await this.db.collection(STATUS_COLLECTION).countDocuments();
+
+        // Calculate average rates from all samples with non-zero deltas
+        const allSamples = await this.db.collection(SAMPLES_COLLECTION)
+            .find({})
+            .sort({ elapsedMs: 1 })
+            .toArray();
+
         const avgRates = {};
         const avgTimePerUnit = {};
         let totalDeltas = { files: 0, chunks: 0, candidates: 0, clones: 0 };
         let activeSamples = { files: 0, chunks: 0, candidates: 0, clones: 0 };
 
-        for (const s of this.samples) {
+        for (const s of allSamples) {
             for (const coll of COLLECTIONS) {
                 totalDeltas[coll] += s.deltas[coll] || 0;
                 if (s.deltas[coll] > 0) activeSamples[coll]++;
@@ -188,8 +258,9 @@ class Monitor {
             avgRates[coll] = activeSamples[coll] > 0
                 ? (totalDeltas[coll] / (activeSamples[coll] * this.pollIntervalMs / 1000))
                 : 0;
+            // avg time per unit in µs
             avgTimePerUnit[coll] = activeSamples[coll] > 0
-                ? (activeSamples[coll] * this.pollIntervalMs / totalDeltas[coll])
+                ? (activeSamples[coll] * this.pollIntervalMs * 1000 / totalDeltas[coll])
                 : 0;
         }
 
@@ -199,43 +270,62 @@ class Monitor {
             lastCounts: lastSample ? lastSample.counts : { files: 0, chunks: 0, candidates: 0, clones: 0 },
             avgRates,
             avgTimePerUnit,
-            statusUpdateCount: this.statusUpdates.length,
+            statusUpdateCount,
         };
     }
 
-    getSamples() {
-        return this.samples;
+    async getSamples() {
+        return await this.db.collection(SAMPLES_COLLECTION)
+            .find({})
+            .sort({ elapsedMs: 1 })
+            .toArray();
     }
 
-    getRecentSamples(count) {
-        return this.samples.slice(-count);
+    async getRecentSamples(count) {
+        return await this.db.collection(SAMPLES_COLLECTION)
+            .find({})
+            .sort({ elapsedMs: -1 })
+            .limit(count)
+            .toArray();
     }
 
-    getStatusUpdates() {
-        return this.statusUpdates;
+    async getStatusUpdates(limit = 0) {
+        const query = {};
+        const options = { sort: { _id: -1 } };
+        if (limit > 0) options.limit = limit;
+        return await this.db.collection(STATUS_COLLECTION)
+            .find(query, options)
+            .toArray();
     }
 
-    getRecentStatusUpdates(count) {
-        return this.statusUpdates.slice(-count);
+    async getRecentStatusUpdates(count) {
+        return await this.db.collection(STATUS_COLLECTION)
+            .find({})
+            .sort({ _id: -1 })
+            .limit(count)
+            .toArray();
     }
 
     // Export all collected data as a JSON string (for raw data export)
-    exportAll() {
+    async exportAll() {
+        const samples = await this.getSamples();
+        const statusUpdates = await this.getStatusUpdates();
         return JSON.stringify({
             startTime: this.startTime ? new Date(this.startTime).toISOString() : null,
             pollIntervalMs: this.pollIntervalMs,
-            samples: this.samples,
-            statusUpdates: this.statusUpdates,
+            samples,
+            statusUpdates,
         }, null, 2);
     }
 
     // Export samples as CSV (for raw data appendix in the report)
-    exportCSV() {
+    async exportCSV() {
+        const samples = await this.getSamples();
         const header = 'sample,timestamp,elapsedMs,files,chunks,candidates,clones,' +
             'd_files,d_chunks,d_candidates,d_clones,' +
             'rate_files,rate_chunks,rate_candidates,rate_clones,' +
             'tpu_files,tpu_chunks,tpu_candidates,tpu_clones\n';
-        const rows = this.samples.map((s, i) => {
+        const rows = samples.map((s, i) => {
             return [
                 i + 1,
                 s.timestamp,

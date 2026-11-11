@@ -55,45 +55,42 @@
     ;; [PERF] Track count with a local counter instead of calling mc/count after
     ;; each batch. mc/count does a full collection scan (O(n) per call), making
     ;; the total O(n²) — this was the primary cause of slowdown from 2000/s to 3.3/s.
-    (loop [batches file-parted
-           stored 0]
-      (when (seq batches)
-        (let [batch (first batches)
-              batch-size (count batch)
-              success? (try (mc/insert-batch db collname (map (fn [f] {:fileName (.getPath f) :contents (slurp f)}) batch))
-                            true
-                            (catch Exception e false))]
-          (if success?
-            (do
-              ;; [MONITORING] Log progress after each batch insert
-              (let [total (+ stored batch-size)]
-                (addUpdate! (.toString (java.time.LocalDateTime/now))
-                            (str "store-files: stored batch, total files in DB: " total)))
-              (recur (next batches) (+ stored batch-size)))
-            ;; Re-run this batch if insert failed
-            (recur batches stored)))))))
+    ;; [PERF] Use a local atom counter with doseq (not loop/recur) so that a
+    ;; permanently-failing batch (e.g. file exceeds MongoDB 16MB limit) is skipped,
+    ;; not retried forever. The original code used doseq which always advances.
+    (let [stored (atom 0)]
+      (doseq [batch file-parted]
+        (let [batch-size (count batch)]
+          (try
+            (mc/insert-batch db collname (map (fn [f] {:fileName (.getPath f) :contents (slurp f)}) batch))
+            (swap! stored + batch-size)
+            ;; [MONITORING] Log progress after each batch insert
+            (addUpdate! (.toString (java.time.LocalDateTime/now))
+                        (str "store-files: stored batch, total files in DB: " @stored))
+            (catch Exception e
+              ;; Skip this batch — original code did the same (empty catch body)
+              nil)))))))
 
 (defn store-chunks! [chunks]
   (let [db (get-db)
         collname "chunks"
-        all-chunks (flatten chunks)
-        chunk-parted (partition-all partition-size all-chunks)]
-    ;; [MONITORING] Log total chunk count before storing
+        chunk-parted (partition-all partition-size (flatten chunks))]
+    ;; [MONITORING] Log that chunk storage is starting.
+    ;; [PERF] Do NOT call (count all-chunks) — that forces the entire lazy chunk
+    ;; seq (potentially millions of chunks from 162K files) to be computed in
+    ;; memory before any storing begins, causing an apparent hang.
     (addUpdate! (.toString (java.time.LocalDateTime/now))
-                (str "store-chunks: starting with " (count all-chunks) " chunks in "
-                     (count chunk-parted) " batches"))
-    ;; [PERF] Same O(n²) fix as store-files! — use a local counter instead of mc/count.
-    (loop [batches chunk-parted
-           stored 0]
-      (when (seq batches)
-        (let [batch (first batches)
-              batch-size (count batch)]
+                (str "store-chunks: starting batch inserts"))
+    ;; [PERF] Use doseq with atom counter (not loop/recur) for consistency with
+    ;; store-files! and to avoid calling mc/count (O(n²) collection scan).
+    (let [stored (atom 0)]
+      (doseq [batch chunk-parted]
+        (let [batch-size (count batch)]
           (mc/insert-batch db collname (map identity batch))
+          (swap! stored + batch-size)
           ;; [MONITORING] Log progress after each batch insert
-          (let [total (+ stored batch-size)]
-            (addUpdate! (.toString (java.time.LocalDateTime/now))
-                        (str "store-chunks: stored batch, total chunks in DB: " total)))
-          (recur (next batches) (+ stored batch-size)))))))
+          (addUpdate! (.toString (java.time.LocalDateTime/now))
+                      (str "store-chunks: stored batch, total chunks in DB: " @stored)))))))
 
 (defn store-clones! [clones]
   (let [db (get-db)

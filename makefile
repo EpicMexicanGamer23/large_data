@@ -20,11 +20,19 @@ build-cg: corpusVolume
 cljDetector: corpusVolume
 	@docker compose -f all-at-once.yaml up
 
+# View previous session data — starts MonitorTool in archive mode
+# Data is read from the session-archive volume (previous-session.json)
+viewPrevious:
+	@docker run --rm -p 8082:3000 \
+		-e ARCHIVE_FILE=/data/previous-session.json \
+		-v session-archive:/data:ro \
+		monitor-tool
+
 mongodb:
 	@docker compose -f all-at-once.yaml up dbstorage
 
 mongosh:
-	@docker exec -it bigdataanalytics-dbstorage-1 mongosh
+	@docker exec -it large_data-dbstorage-1 mongosh
 
 doc:
 	@emacs --batch --file ./Documentation/Big-Data-Analytics.org --eval "(org-texinfo-export-to-info)"

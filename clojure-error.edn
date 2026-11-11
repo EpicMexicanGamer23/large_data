@@ -1,0 +1,168 @@
+{:clojure.main/message
+ "Execution error (SocketException) at sun.nio.ch.NioSocketImpl/implRead (NioSocketImpl.java:316).\nConnection reset\n",
+ :clojure.main/triage
+ {:clojure.error/class java.net.SocketException,
+  :clojure.error/line 316,
+  :clojure.error/cause "Connection reset",
+  :clojure.error/symbol sun.nio.ch.NioSocketImpl/implRead,
+  :clojure.error/source "NioSocketImpl.java",
+  :clojure.error/phase :execution},
+ :clojure.main/trace
+ {:via
+  [{:type clojure.lang.Compiler$CompilerException,
+    :message
+    "Syntax error macroexpanding at (/tmp/form-init8241290085582073786.clj:1:73).",
+    :data
+    {:clojure.error/phase :execution,
+     :clojure.error/line 1,
+     :clojure.error/column 73,
+     :clojure.error/source "/tmp/form-init8241290085582073786.clj"},
+    :at [clojure.lang.Compiler load "Compiler.java" 7665]}
+   {:type com.mongodb.MongoSocketReadException,
+    :message "Exception receiving message",
+    :at
+    [com.mongodb.internal.connection.InternalStreamConnection
+     translateReadException
+     "InternalStreamConnection.java"
+     568]}
+   {:type java.net.SocketException,
+    :message "Connection reset",
+    :at [sun.nio.ch.NioSocketImpl implRead "NioSocketImpl.java" 316]}],
+  :trace
+  [[sun.nio.ch.NioSocketImpl implRead "NioSocketImpl.java" 316]
+   [sun.nio.ch.NioSocketImpl read "NioSocketImpl.java" 354]
+   [sun.nio.ch.NioSocketImpl$1 read "NioSocketImpl.java" 798]
+   [java.net.Socket$SocketInputStream implRead "Socket.java" 974]
+   [java.net.Socket$SocketInputStream read "Socket.java" 964]
+   [com.mongodb.internal.connection.SocketStream
+    read
+    "SocketStream.java"
+    109]
+   [com.mongodb.internal.connection.InternalStreamConnection
+    receiveResponseBuffers
+    "InternalStreamConnection.java"
+    579]
+   [com.mongodb.internal.connection.InternalStreamConnection
+    receiveMessage
+    "InternalStreamConnection.java"
+    444]
+   [com.mongodb.internal.connection.InternalStreamConnection
+    receiveCommandMessageResponse
+    "InternalStreamConnection.java"
+    298]
+   [com.mongodb.internal.connection.InternalStreamConnection
+    sendAndReceive
+    "InternalStreamConnection.java"
+    258]
+   [com.mongodb.internal.connection.UsageTrackingInternalConnection
+    sendAndReceive
+    "UsageTrackingInternalConnection.java"
+    99]
+   [com.mongodb.internal.connection.DefaultConnectionPool$PooledConnection
+    sendAndReceive
+    "DefaultConnectionPool.java"
+    450]
+   [com.mongodb.internal.connection.CommandProtocolImpl
+    execute
+    "CommandProtocolImpl.java"
+    72]
+   [com.mongodb.internal.connection.DefaultServer$DefaultServerProtocolExecutor
+    execute
+    "DefaultServer.java"
+    226]
+   [com.mongodb.internal.connection.DefaultServerConnection
+    executeProtocol
+    "DefaultServerConnection.java"
+    269]
+   [com.mongodb.internal.connection.DefaultServerConnection
+    command
+    "DefaultServerConnection.java"
+    131]
+   [com.mongodb.operation.MixedBulkWriteOperation
+    executeCommand
+    "MixedBulkWriteOperation.java"
+    435]
+   [com.mongodb.operation.MixedBulkWriteOperation
+    executeBulkWriteBatch
+    "MixedBulkWriteOperation.java"
+    261]
+   [com.mongodb.operation.MixedBulkWriteOperation
+    access$700
+    "MixedBulkWriteOperation.java"
+    72]
+   [com.mongodb.operation.MixedBulkWriteOperation$1
+    call
+    "MixedBulkWriteOperation.java"
+    205]
+   [com.mongodb.operation.MixedBulkWriteOperation$1
+    call
+    "MixedBulkWriteOperation.java"
+    196]
+   [com.mongodb.operation.OperationHelper
+    withReleasableConnection
+    "OperationHelper.java"
+    501]
+   [com.mongodb.operation.MixedBulkWriteOperation
+    execute
+    "MixedBulkWriteOperation.java"
+    196]
+   [com.mongodb.operation.BaseWriteOperation
+    execute
+    "BaseWriteOperation.java"
+    148]
+   [com.mongodb.operation.BaseWriteOperation
+    execute
+    "BaseWriteOperation.java"
+    52]
+   [com.mongodb.client.internal.MongoClientDelegate$DelegateOperationExecutor
+    execute
+    "MongoClientDelegate.java"
+    216]
+   [com.mongodb.client.internal.MongoClientDelegate$DelegateOperationExecutor
+    execute
+    "MongoClientDelegate.java"
+    185]
+   [com.mongodb.DBCollection
+    executeWriteOperation
+    "DBCollection.java"
+    356]
+   [com.mongodb.DBCollection insert "DBCollection.java" 351]
+   [com.mongodb.DBCollection insert "DBCollection.java" 342]
+   [com.mongodb.DBCollection insert "DBCollection.java" 311]
+   [com.mongodb.DBCollection insert "DBCollection.java" 274]
+   [monger.collection$insert_batch invokeStatic "collection.clj" 114]
+   [monger.collection$insert_batch invoke "collection.clj" 111]
+   [cljdetector.storage.storage$store_chunks_BANG_
+    invokeStatic
+    "storage.clj"
+    89]
+   [cljdetector.storage.storage$store_chunks_BANG_
+    invoke
+    "storage.clj"
+    74]
+   [cljdetector.core$maybe_read_files invokeStatic "core.clj" 34]
+   [cljdetector.core$maybe_read_files invoke "core.clj" 24]
+   [cljdetector.core$_main invokeStatic "core.clj" 68]
+   [cljdetector.core$_main doInvoke "core.clj" 58]
+   [clojure.lang.RestFn invoke "RestFn.java" 408]
+   [clojure.lang.Var invoke "Var.java" 384]
+   [user$eval140 invokeStatic "form-init8241290085582073786.clj" 1]
+   [user$eval140 invoke "form-init8241290085582073786.clj" 1]
+   [clojure.lang.Compiler eval "Compiler.java" 7194]
+   [clojure.lang.Compiler eval "Compiler.java" 7184]
+   [clojure.lang.Compiler load "Compiler.java" 7653]
+   [clojure.lang.Compiler loadFile "Compiler.java" 7591]
+   [clojure.main$load_script invokeStatic "main.clj" 475]
+   [clojure.main$init_opt invokeStatic "main.clj" 477]
+   [clojure.main$init_opt invoke "main.clj" 477]
+   [clojure.main$initialize invokeStatic "main.clj" 508]
+   [clojure.main$null_opt invokeStatic "main.clj" 542]
+   [clojure.main$null_opt invoke "main.clj" 539]
+   [clojure.main$main invokeStatic "main.clj" 664]
+   [clojure.main$main doInvoke "main.clj" 616]
+   [clojure.lang.RestFn applyTo "RestFn.java" 137]
+   [clojure.lang.Var applyTo "Var.java" 705]
+   [clojure.main main "main.java" 40]],
+  :cause "Connection reset",
+  :phase :execution}}
+

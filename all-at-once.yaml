@@ -1,10 +1,29 @@
 # Docker Compose for All-At-Once Code Clone Detection
 
-version: "3.8"
 services:
+  monitorTool:
+    image: monitor-tool
+    depends_on:
+      - dbstorage
+    ports:
+      - 8081:3000
+    volumes:
+      - ./Containers/MonitorTool:/usr/src/app
+      - /usr/src/app/node_modules
+      - session-archive:/data
+    environment:
+      DBHOST: dbstorage
+      ARCHIVE_PATH: /data/previous-session.json
+    mem_limit: 256m
+
   clone-detector:
     image: cljdetector
-    command: clear 
+    command: clear
+    depends_on:
+      monitorTool:
+        condition: service_started
+      dbstorage:
+        condition: service_started
     ports:
       - 8080:3000
     volumes:
@@ -16,23 +35,12 @@ services:
       SOURCEDIReclipse: "/QualitasCorpus/QualitasCorpus-20130901r/Systems/eclipse_SDK"
       SOURCEDIR: "/QualitasCorpus"
       CHUNKSIZE: 20
-  
-  monitorTool:
-    image: monitor-tool
-    depends_on:
-      - dbstorage
-    ports:
-      - 8081:3000
-    volumes:
-      - ./Containers/MonitorTool:/usr/src/app
-      - /usr/src/app/node_modules
-    environment:
-      DBHOST: dbstorage
+    mem_limit: 2g
 
   dbstorage:
     image: mongo
     restart: always
-    command: --quiet --syslog
+    command: --quiet --syslog --wiredTigerCacheSizeGB 2
     ports:
       - 27017:27017
     expose:
@@ -40,11 +48,11 @@ services:
     volumes:
       - dbstorage:/data/db
       - dbconfig:/data/configdb
-    
-    
+    mem_limit: 3g
+
 volumes:
   dbstorage:
   dbconfig:
   qc-volume:
     external: true
-    
+  session-archive:
