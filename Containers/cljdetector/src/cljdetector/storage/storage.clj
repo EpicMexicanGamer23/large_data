@@ -7,8 +7,17 @@
 (def DEFAULT-DBHOST "localhost")
 (def dbname "cloneDetector")
 (def partition-size 100)
+(def chunk-partition-size 1000) ;; Updated from 100 to 1000 to reduce the number of database calls when storing chunks.
 (def hostname (or (System/getenv "DBHOST") DEFAULT-DBHOST))
-(def collnames ["files"  "chunks" "candidates" "clones"])
+(def collnames ["files"  "chunks" "candidates" "clones" "statusUpdates"])
+
+;; Store status updates in statusUpdates collection in the database.
+;; Each update is a map with keys :timestamp and :message.
+(defn addUpdate! [update]
+  (let [conn (mg/connect {:host hostname})
+        db (mg/get-db conn dbname)
+        collname "statusUpdates"]
+    (mc/insert db collname update)))
 
 (defn print-statistics []
   (let [conn (mg/connect {:host hostname})        
@@ -40,7 +49,7 @@
   (let [conn (mg/connect {:host hostname})        
         db (mg/get-db conn dbname)
         collname "chunks"
-        chunk-parted (partition-all partition-size (flatten chunks))]
+        chunk-parted (partition-all chunk-partition-size (flatten chunks))]
     (doseq [chunk-group chunk-parted]
       (mc/insert-batch db collname (map identity chunk-group)))))
 
@@ -49,6 +58,7 @@
         db (mg/get-db conn dbname)
         collname "clones"
         clones-parted (partition-all partition-size clones)]
+    (addUpdate! {:timestamp (.toString (java.time.LocalDateTime/now)) :message (str "Storing " (count clones) " clones in database...")})
     (doseq [clone-group clones-parted]
       (mc/insert-batch db collname (map identity clone-group)))))
 
@@ -56,14 +66,15 @@
   (let [conn (mg/connect {:host hostname})        
         db (mg/get-db conn dbname)
         collname "chunks"]
-     (mc/aggregate db collname
-                   [{$group {:_id {:chunkHash "$chunkHash"}
-                             :numberOfInstances {$count {}}
-                             :instances {$push {:fileName "$fileName"
-                                                :startLine "$startLine"
-                                                :endLine "$endLine"}}}}
-                    {$match {:numberOfInstances {$gt 1}}}
-                    {"$out" "candidates"} ])))
+    (mc/aggregate db collname
+                  [{$group {:_id {:chunkHash "$chunkHash"}
+                            :numberOfInstances {$count {}}
+                            :instances {$push {:fileName "$fileName"
+                                               :startLine "$startLine"
+                                               :endLine "$endLine"}}}}
+                   {$match {:numberOfInstances {$gt 1}}}
+                   {"$out" "candidates"}])
+    (mc/ensure-index db "candidates" (array-map "instances.fileName" 1))))
 
 
 (defn consolidate-clones-and-source []

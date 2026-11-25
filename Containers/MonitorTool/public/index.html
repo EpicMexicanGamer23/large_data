@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Clone Detector Monitor</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/charts.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">CLJDETECTOR</p>
+          <h1>Processing monitor</h1>
+        </div>
+        <div id="connection" class="connection" role="status">Connecting to MongoDB…</div>
+      </header>
+
+      <section aria-labelledby="counts-heading">
+        <h2 id="counts-heading">Current collection counts</h2>
+        <div id="counts" class="count-grid"></div>
+        <p id="sample-time" class="muted">No sample yet</p>
+      </section>
+
+      <section aria-labelledby="interval-heading">
+        <h2 id="interval-heading">Latest interval</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Collection</th>
+                <th scope="col">Units added</th>
+                <th scope="col">Units / second</th>
+                <th scope="col">Seconds / unit</th>
+                <th scope="col">Trend fit</th>
+              </tr>
+            </thead>
+            <tbody id="intervals"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="trends-heading">
+        <h2 id="trends-heading">Processing time vs. prior collection size</h2>
+        <p class="muted">
+          Each point uses the collection count at the start of the interval and the
+          observed time per newly added unit. Linear and exponential fits are
+          compared on the same time-per-unit scale; short runs may not provide
+          enough evidence to distinguish them.
+        </p>
+        <div id="charts" class="chart-grid"></div>
+      </section>
+
+      <section aria-labelledby="updates-heading">
+        <div class="section-heading">
+          <h2 id="updates-heading">Detector status updates</h2>
+          <a href="/export/json">Export JSON</a>
+          <a href="/export/csv">Export sample CSV</a>
+        </div>
+        <ol id="updates" class="updates"></ol>
+      </section>
+      <p id="error" class="error" role="alert"></p>
+    </main>
+  </body>
+</html>

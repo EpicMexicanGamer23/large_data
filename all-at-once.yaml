@@ -1,10 +1,31 @@
 # Docker Compose for All-At-Once Code Clone Detection
 
-version: "3.8"
 services:
+  monitorTool:
+    image: monitor-tool
+    depends_on:
+      dbstorage:
+        condition: service_healthy
+    ports:
+      - 8081:3000
+    environment:
+      DBHOST: dbstorage
+      DBNAME: cloneDetector
+      POLL_INTERVAL: 5000
+      PORT: 3000
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
   clone-detector:
     image: cljdetector
     command: clear 
+    depends_on:
+      monitorTool:
+        condition: service_healthy
     ports:
       - 8080:3000
     volumes:
@@ -28,6 +49,12 @@ services:
     volumes:
       - dbstorage:/data/db
       - dbconfig:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok === 1 ? 0 : 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     
 volumes:
   dbstorage:
